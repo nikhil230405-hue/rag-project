@@ -1,6 +1,8 @@
-streamlit
+gensim
 groq
-faiss-cpu
-PyPDF2
+streamlit
 numpy
-
+PyPDF2
+scikit-learn
+nltk
+faiss-cpu
