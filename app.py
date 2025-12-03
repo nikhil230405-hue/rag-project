@@ -1,7 +1,6 @@
 import streamlit as st
 import PyPDF2
 import numpy as np
-from sentence_transformers import SentenceTransformer
 import faiss
 from groq import Groq
 
@@ -22,18 +21,19 @@ def extract_pdf_text(pdf_file):
 # ----------------------------
 # TEXT CHUNKING
 # ----------------------------
-def chunk_text(text, size=400):
+def chunk_text(text, size=300):
     words = text.split()
     return [" ".join(words[i:i+size]) for i in range(0, len(words), size)]
 
 # ----------------------------
-# EMBEDDING MODEL (IMPORTANT FIX)
+# GROQ EMBEDDINGS
 # ----------------------------
-# Force CPU mode because Streamlit Cloud breaks GPU/auto-detect
-embedder = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
-
-def get_embeddings(texts):
-    return np.array(embedder.encode(texts)).astype("float32")
+def embed_text_list(text_list):
+    response = client.embeddings.create(
+        model="nomic-embed-text",
+        input=text_list
+    )
+    return np.array([item.embedding for item in response.data]).astype("float32")
 
 # ----------------------------
 # FAISS INDEX
@@ -44,18 +44,22 @@ def build_faiss(embeddings):
     index.add(embeddings)
     return index
 
-def search_faiss(query, chunks, chunk_emb, index, top_k=3):
-    q_emb = embedder.encode([query]).astype("float32")
+def search_faiss(query, chunks, index, top_k=3):
+    q_emb = embed_text_list([query])
     dist, idxs = index.search(q_emb, top_k)
     return [chunks[i] for i in idxs[0]]
 
 # ----------------------------
-# GROQ LLM ANSWER
+# GROQ LLM FOR ANSWERING
 # ----------------------------
 def groq_answer(question, context):
     prompt = f"""
-Use ONLY this context to answer the question:
+You are a helpful FAQ assistant.
 
+Use the provided context **ONLY IF RELEVANT**.  
+If the context is not related to the question, give a general helpful answer.
+
+Context:
 {context}
 
 Question: {question}
@@ -64,40 +68,40 @@ Question: {question}
         model="llama-3.1-8b-instant",
         messages=[{"role": "user", "content": prompt}],
         max_tokens=250,
-        temperature=0
+        temperature=0.2
     )
 
-    # FIX: Groq returns message.content not message["content"]
     return res.choices[0].message.content
 
 # ----------------------------
 # STREAMLIT UI
 # ----------------------------
-st.title("📘 Simple University FAQ RAG Chatbot (Groq + FAISS)")
-st.write("Upload your PDF and ask any question.")
+st.title("📘 University FAQ RAG Chatbot (Groq + FAISS)")
+st.write("Upload your PDF and ask any question — RAG + general LLM answers.")
 
 pdf = st.file_uploader("Upload your FAQ PDF", type="pdf")
 
 if pdf:
     st.success("PDF uploaded successfully!")
 
+    # Build RAG system
     text = extract_pdf_text(pdf)
     chunks = chunk_text(text)
-    chunk_emb = get_embeddings(chunks)
-    index = build_faiss(chunk_emb)
+    chunk_embeddings = embed_text_list(chunks)
+    index = build_faiss(chunk_embeddings)
 
     question = st.text_input("Ask a question:")
 
     if question:
-        retrieved = search_faiss(question, chunks, chunk_emb, index)
-        context = "\n\n".join(retrieved)
+        retrieved_chunks = search_faiss(question, chunks, index)
+        context = "\n\n".join(retrieved_chunks)
 
         answer = groq_answer(question, context)
 
         st.subheader("🟦 Answer")
         st.write(answer)
 
-        st.subheader("🔍 Retrieved Chunks Used")
-        for i, c in enumerate(retrieved):
+        st.subheader("🟧 Retrieved Chunks Used")
+        for i, c in enumerate(retrieved_chunks):
             with st.expander(f"Chunk {i+1}"):
                 st.write(c)
