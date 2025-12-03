@@ -6,3 +6,11 @@ PyPDF2
 scikit-learn
 nltk
 faiss-cpu
+
+streamlit
+numpy
+PyPDF2
+nltk
+faiss-cpu
+gensim
+scikit-learn  # if using PCA
