@@ -34,6 +34,10 @@ def chunk_text(text, size=300):
 #         input=text_list
 #     )
 #     return np.array([item.embedding for item in response.data]).astype("float32")
+
+import re
+import json
+
 def embed_text_list(text_list):
     vectors = []
     for text in text_list:
@@ -42,18 +46,28 @@ def embed_text_list(text_list):
             messages=[
                 {
                     "role": "user",
-                    "content": f"Convert the following text into a 256-dimensional numeric embedding. Output ONLY a JSON list of 256 numbers:\n\n{text}"
+                    "content": f"""Convert the following text into a 256-dimensional numeric embedding.
+                    Output ONLY a JSON list of 256 numbers:
+
+                    {text}"""
                 }
             ],
             max_tokens=300,
             temperature=0
         )
 
-        import json
-        vector = json.loads(resp.choices[0].message.content)
-        vectors.append(vector)
+        raw_output = resp.choices[0].message.content.strip()
 
-    return np.array(vectors).astype("float32")
+        # Extract JSON array using regex
+        match = re.search(r"\[.*\]", raw_output, re.DOTALL)
+        if match:
+            vector = json.loads(match.group(0))
+            vectors.append(vector)
+        else:
+            raise ValueError(f"Invalid response: {raw_output}")
+
+    return np.array(vectors).astype("float32
+
 
 
 # ----------------------------
