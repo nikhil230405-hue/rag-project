@@ -261,7 +261,6 @@ import faiss
 from sklearn.feature_extraction.text import TfidfVectorizer
 from nltk.tokenize import word_tokenize
 import nltk
-pip install scikit-learn
 nltk.download('punkt')
 
 # ----------------------------
