@@ -27,9 +27,9 @@ def chunk_text(text, size=400):
     return [" ".join(words[i:i+size]) for i in range(0, len(words), size)]
 
 # ----------------------------
-# EMBEDDING MODEL
+# EMBEDDING MODEL (Force CPU for Streamlit Cloud)
 # ----------------------------
-embedder = SentenceTransformer("all-MiniLM-L6-v2")
+embedder = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
 
 def get_embeddings(texts):
     return np.array(embedder.encode(texts)).astype("float32")
@@ -45,35 +45,61 @@ def build_faiss(embeddings):
 
 def search_faiss(query, chunks, chunk_emb, index, top_k=3):
     q_emb = embedder.encode([query]).astype("float32")
-    dist, idxs = index.search(q_emb, top_k)
-    return [chunks[i] for i in idxs[0]]
+    distances, idxs = index.search(q_emb, top_k)
+
+    # Return list of (distance, chunk)
+    results = []
+    for dist, idx in zip(distances[0], idxs[0]):
+        results.append((dist, chunks[idx]))
+
+    return results
 
 # ----------------------------
-# GROQ LLM ANSWER
+# HYBRID LLM ANSWER (RAG + fallback)
 # ----------------------------
-def groq_answer(question, context):
-    prompt = f"""
+def groq_answer(question, retrieved_chunks):
+
+    # Sort by best similarity (lower distance = more similar)
+    retrieved_chunks.sort(key=lambda x: x[0])
+
+    best_distance, best_chunk = retrieved_chunks[0]
+
+    # Threshold to determine if PDF match is relevant
+    RAG_THRESHOLD = 1.1
+
+    if best_distance > RAG_THRESHOLD:
+        # Not related to PDF → answer normally
+        prompt = f"""
+The user's question is NOT related to the uploaded document.
+Answer using general knowledge like a normal LLM.
+
+Question: {question}
+"""
+    else:
+        # Related → use RAG
+        context = "\n\n".join([chunk for dist, chunk in retrieved_chunks])
+        prompt = f"""
 Use ONLY this context to answer the question:
 
 {context}
 
 Question: {question}
 """
+
     res = client.chat.completions.create(
         model="llama-3.1-8b-instant",
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=250,
-        temperature=0
+        max_tokens=300,
+        temperature=0.2
     )
 
-    # FIX: Groq returns message.content not message["content"]
     return res.choices[0].message.content
 
 # ----------------------------
 # STREAMLIT UI
 # ----------------------------
 st.title("📘 Simple University FAQ RAG Chatbot (Groq + FAISS)")
-st.write("Upload your PDF and ask any question.")
+st.write("If answer is NOT in PDF → model gives general knowledge answer.")
 
 pdf = st.file_uploader("Upload your FAQ PDF", type="pdf")
 
@@ -89,14 +115,12 @@ if pdf:
 
     if question:
         retrieved = search_faiss(question, chunks, chunk_emb, index)
-        context = "\n\n".join(retrieved)
-
-        answer = groq_answer(question, context)
+        answer = groq_answer(question, retrieved)
 
         st.subheader("🟦 Answer")
         st.write(answer)
 
-        st.subheader("🔍 Retrieved Chunks Used")
-        for i, c in enumerate(retrieved):
-            with st.expander(f"Chunk {i+1}"):
-                st.write(c)
+        st.subheader("🔍 Retrieved Chunks & Distances")
+        for i, (dist, chunk) in enumerate(retrieved):
+            with st.expander(f"Chunk {i+1} | distance={dist:.3f}"):
+                st.write(chunk)
