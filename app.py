@@ -28,12 +28,34 @@ def chunk_text(text, size=300):
 # ----------------------------
 # GROQ EMBEDDINGS (CORRECT MODEL)
 # ----------------------------
+# def embed_text_list(text_list):
+#     response = client.embeddings.create(
+#         model="text-embedding-3-large",
+#         input=text_list
+#     )
+#     return np.array([item.embedding for item in response.data]).astype("float32")
 def embed_text_list(text_list):
-    response = client.embeddings.create(
-        model="text-embedding-3-large",
-        input=text_list
-    )
-    return np.array([item.embedding for item in response.data]).astype("float32")
+    vectors = []
+    for text in text_list:
+        resp = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"Convert the following text into a 256-dimensional numeric embedding. 
+                    Output ONLY a JSON list of 256 numbers:\n\n{text}"
+                }
+            ],
+            max_tokens=300,
+            temperature=0
+        )
+
+        import json
+        vector = json.loads(resp.choices[0].message.content)
+        vectors.append(vector)
+
+    return np.array(vectors).astype("float32")
+
 
 # ----------------------------
 # FAISS INDEX
