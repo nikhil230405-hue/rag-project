@@ -25,15 +25,15 @@
 #     words = text.split()
 #     return [" ".join(words[i:i+size]) for i in range(0, len(words), size)]
 
-# # ----------------------------
-# # GROQ EMBEDDINGS (CORRECT MODEL)
-# # ----------------------------
-# # def embed_text_list(text_list):
-# #     response = client.embeddings.create(
-# #         model="text-embedding-3-large",
-# #         input=text_list
-# #     )
-# #     return np.array([item.embedding for item in response.data]).astype("float32")
+# ----------------------------
+# GROQ EMBEDDINGS (CORRECT MODEL)
+# ----------------------------
+# def embed_text_list(text_list):
+#     response = client.embeddings.create(
+#         model="text-embedding-3-large",
+#         input=text_list
+#     )
+#     return np.array([item.embedding for item in response.data]).astype("float32")
 
 # import re
 # import json
@@ -141,28 +141,15 @@
 #                 st.write(c)
 
 # ------------------
-
 import streamlit as st
 import PyPDF2
 import numpy as np
+from sentence_transformers import SentenceTransformer
 import faiss
-from gensim.models import KeyedVectors
-from nltk.tokenize import word_tokenize
-import nltk
-from sklearn.decomposition import PCA
-import gensim.downloader as api
+from groq import Groq
 
-nltk.download('punkt')
-
-# ----------------------------
-# LOAD WORD2VEC MODEL
-# ----------------------------
-@st.cache_resource
-def load_word2vec_model():
-    # Download the model if needed: GoogleNews-vectors-negative300.bin
-    return KeyedVectors.load_word2vec_format("GoogleNews-vectors-negative300.bin", binary=True)
-
-model = load_word2vec_model()
+# Load Groq API key from Streamlit Secrets
+client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
 # ----------------------------
 # PDF TEXT EXTRACTION
@@ -171,17 +158,138 @@ def extract_pdf_text(pdf_file):
     reader = PyPDF2.PdfReader(pdf_file)
     text = ""
     for page in reader.pages:
-        page_text = page.extract_text()
-        if page_text:
-            text += page_text + "\n"
-    return text.strip()
+        if page.extract_text():
+            text += page.extract_text() + "\n"
+    return text
 
 # ----------------------------
 # TEXT CHUNKING
 # ----------------------------
-def chunk_text(text, size=300):
+def chunk_text(text, size=400):
     words = text.split()
     return [" ".join(words[i:i+size]) for i in range(0, len(words), size)]
+
+# ----------------------------
+# EMBEDDING MODEL
+# ----------------------------
+embedder = SentenceTransformer("all-MiniLM-L6-v2")
+
+def get_embeddings(texts):
+    return np.array(embedder.encode(texts)).astype("float32")
+
+# ----------------------------
+# FAISS INDEX
+# ----------------------------
+def build_faiss(embeddings):
+    dims = embeddings.shape[1]
+    index = faiss.IndexFlatL2(dims)
+    index.add(embeddings)
+    return index
+
+def search_faiss(query, chunks, chunk_emb, index, top_k=3):
+    q_emb = embedder.encode([query]).astype("float32")
+    dist, idxs = index.search(q_emb, top_k)
+    return [chunks[i] for i in idxs[0]]
+
+# ----------------------------
+# GROQ LLM ANSWER
+# ----------------------------
+def groq_answer(question, context):
+    prompt = f"""
+Use ONLY this context to answer the question:
+
+{context}
+
+Question: {question}
+"""
+    res = client.chat.completions.create(
+        model="llama-3.1-8b-instant",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=250,
+        temperature=0
+    )
+
+    # FIX: Groq returns message.content not message["content"]
+    return res.choices[0].message.content
+
+# ----------------------------
+# STREAMLIT UI
+# ----------------------------
+st.title("📘 Simple University FAQ RAG Chatbot (Groq + FAISS)")
+st.write("Upload your PDF and ask any question.")
+
+pdf = st.file_uploader("Upload your FAQ PDF", type="pdf")
+
+if pdf:
+    st.success("PDF uploaded successfully!")
+
+    text = extract_pdf_text(pdf)
+    chunks = chunk_text(text)
+    chunk_emb = get_embeddings(chunks)
+    index = build_faiss(chunk_emb)
+
+    question = st.text_input("Ask a question:")
+
+    if question:
+        retrieved = search_faiss(question, chunks, chunk_emb, index)
+        context = "\n\n".join(retrieved)
+
+        answer = groq_answer(question, context)
+
+        st.subheader("🟦 Answer")
+        st.write(answer)
+
+        st.subheader("🔍 Retrieved Chunks Used")
+        for i, c in enumerate(retrieved):
+            with st.expander(f"Chunk {i+1}"):
+                st.write(c)
+
+
+
+
+
+
+# ----------------
+# import streamlit as st
+# import PyPDF2
+# import numpy as np
+# import faiss
+# from gensim.models import KeyedVectors
+# from nltk.tokenize import word_tokenize
+# import nltk
+# from sklearn.decomposition import PCA
+# import gensim.downloader as api
+
+# nltk.download('punkt')
+
+# ----------------------------
+# LOAD WORD2VEC MODEL
+# ----------------------------
+# @st.cache_resource
+# def load_word2vec_model():
+#     # Download the model if needed: GoogleNews-vectors-negative300.bin
+#     return KeyedVectors.load_word2vec_format("GoogleNews-vectors-negative300.bin", binary=True)
+
+# model = load_word2vec_model()
+
+# ----------------------------
+# PDF TEXT EXTRACTION
+# # ----------------------------
+# def extract_pdf_text(pdf_file):
+#     reader = PyPDF2.PdfReader(pdf_file)
+#     text = ""
+#     for page in reader.pages:
+#         page_text = page.extract_text()
+#         if page_text:
+#             text += page_text + "\n"
+#     return text.strip()
+
+# ----------------------------
+# TEXT CHUNKING
+# ----------------------------/
+# def chunk_text(text, size=300):
+#     words = text.split()
+#     return [" ".join(words[i:i+size]) for i in range(0, len(words), size)]
 
 # ----------------------------
 # WORD2VEC EMBEDDINGS
@@ -206,84 +314,84 @@ def chunk_text(text, size=300):
 
 # Load a small pre-trained embedding (100-dim)
 
-model = api.load("glove-wiki-gigaword-100")
-from nltk.tokenize import word_tokenize
-import numpy as np
+# model = api.load("glove-wiki-gigaword-100")
+# from nltk.tokenize import word_tokenize
+# import numpy as np
 
-def embed_text_list(text_list, model, pca_model=None):
-    vectors = []
-    for text in text_list:
-        # Tokenize text and keep words in vocabulary
-        tokens = [w for w in word_tokenize(text.lower()) if w in model.key_to_index]
+# def embed_text_list(text_list, model, pca_model=None):
+#     vectors = []
+#     for text in text_list:
+#         # Tokenize text and keep words in vocabulary
+#         tokens = [w for w in word_tokenize(text.lower()) if w in model.key_to_index]
         
-        if tokens:
-            vec = np.mean([model[w] for w in tokens], axis=0)  # average word vectors
-        else:
-            vec = np.zeros(model.vector_size)  # fallback zero vector
+#         if tokens:
+#             vec = np.mean([model[w] for w in tokens], axis=0)  # average word vectors
+#         else:
+#             vec = np.zeros(model.vector_size)  # fallback zero vector
         
-        vectors.append(vec)
+#         vectors.append(vec)
     
-    vectors = np.array(vectors, dtype=np.float32)
+#     vectors = np.array(vectors, dtype=np.float32)
     
-    # Reduce dimensionality if PCA model is provided
-    if pca_model:
-        vectors = pca_model.transform(vectors)
+#     # Reduce dimensionality if PCA model is provided
+#     if pca_model:
+#         vectors = pca_model.transform(vectors)
     
-    return vectors
+#     return vectors
 
 
 
-# ----------------------------
-# FAISS INDEX
-# ----------------------------
-def build_faiss(embeddings):
-    dims = embeddings.shape[1]
-    index = faiss.IndexFlatL2(dims)
-    index.add(embeddings)
-    return index
+# # ----------------------------
+# # FAISS INDEX
+# # ----------------------------
+# def build_faiss(embeddings):
+#     dims = embeddings.shape[1]
+#     index = faiss.IndexFlatL2(dims)
+#     index.add(embeddings)
+#     return index
 
-def search_faiss(query, chunks, index, model, pca_model=None, top_k=3):
-    q_emb = embed_text_list([query], model, pca_model)
-    dist, idxs = index.search(q_emb, top_k)
-    return [chunks[i] for i in idxs[0]]
+# def search_faiss(query, chunks, index, model, pca_model=None, top_k=3):
+#     q_emb = embed_text_list([query], model, pca_model)
+#     dist, idxs = index.search(q_emb, top_k)
+#     return [chunks[i] for i in idxs[0]]
 
 # ----------------------------
 # STREAMLIT UI
 # ----------------------------
-st.title("📘 University FAQ RAG Chatbot (Word2Vec + FAISS)")
-st.write("Upload your PDF and ask questions. Uses RAG with Word2Vec embeddings.")
+# st.title("📘 University FAQ RAG Chatbot (Word2Vec + FAISS)")
+# st.write("Upload your PDF and ask questions. Uses RAG with Word2Vec embeddings.")
 
-pdf = st.file_uploader("Upload your FAQ PDF", type="pdf")
+# pdf = st.file_uploader("Upload your FAQ PDF", type="pdf")
 
-if pdf:
-    st.success("PDF uploaded successfully!")
-    text = extract_pdf_text(pdf)
+# if pdf:
+#     st.success("PDF uploaded successfully!")
+#     text = extract_pdf_text(pdf)
 
-    if len(text.strip()) == 0:
-        st.warning("The PDF contains no extractable text.")
-    else:
-        chunks = chunk_text(text)
+#     if len(text.strip()) == 0:
+#         st.warning("The PDF contains no extractable text.")
+#     else:
+#         chunks = chunk_text(text)
         
-        # PCA for reducing Word2Vec 300-dim → 256-dim
-        with st.spinner("Computing embeddings and PCA..."):
-            temp_vectors = embed_text_list(chunks, model)
-            pca = PCA(n_components=256)
-            pca.fit(temp_vectors)
-            chunk_embeddings = embed_text_list(chunks, model, pca)
+#         # PCA for reducing Word2Vec 300-dim → 256-dim
+#         with st.spinner("Computing embeddings and PCA..."):
+#             temp_vectors = embed_text_list(chunks, model)
+#             pca = PCA(n_components=256)
+#             pca.fit(temp_vectors)
+#             chunk_embeddings = embed_text_list(chunks, model, pca)
         
-        index = build_faiss(chunk_embeddings)
+#         index = build_faiss(chunk_embeddings)
 
-        question = st.text_input("Ask a question:")
+#         question = st.text_input("Ask a question:")
 
-        if question:
-            with st.spinner("Searching relevant chunks..."):
-                retrieved = search_faiss(question, chunks, index, model, pca)
-            context = "\n\n".join(retrieved)
+#         if question:
+#             with st.spinner("Searching relevant chunks..."):
+#                 retrieved = search_faiss(question, chunks, index, model, pca)
+#             context = "\n\n".join(retrieved)
 
-            st.subheader("🔍 Retrieved Chunks Used")
-            for i, c in enumerate(retrieved):
-                with st.expander(f"Chunk {i+1}"):
-                    st.write(c)
+#             st.subheader("🔍 Retrieved Chunks Used")
+#             for i, c in enumerate(retrieved):
+#                 with st.expander(f"Chunk {i+1}"):
+#                     st.write(c)
 # ---------------------
 
 # import streamlit as st
