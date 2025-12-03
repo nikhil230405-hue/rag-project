@@ -42,8 +42,7 @@ def embed_text_list(text_list):
             messages=[
                 {
                     "role": "user",
-                    "content": f"Convert the following text into a 256-dimensional numeric embedding. 
-                    Output ONLY a JSON list of 256 numbers:\n\n{text}"
+                    "content": f"Convert the following text into a 256-dimensional numeric embedding. Output ONLY a JSON list of 256 numbers:\n\n{text}"
                 }
             ],
             max_tokens=300,
