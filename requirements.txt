@@ -3,6 +3,7 @@ PyPDF2
 sentence-transformers==2.2.2
 transformers==4.36.2
 torch==2.2.0
-faiss-cpu
+faiss-cpu==1.7.4
 groq
 numpy
+
