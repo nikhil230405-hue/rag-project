@@ -66,7 +66,7 @@ def embed_text_list(text_list):
         else:
             raise ValueError(f"Invalid response: {raw_output}")
 
-    return np.array(vectors).astype("float32
+    return np.array(vectors).astype("float32")
 
 
 
