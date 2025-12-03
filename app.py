@@ -150,6 +150,7 @@ from gensim.models import KeyedVectors
 from nltk.tokenize import word_tokenize
 import nltk
 from sklearn.decomposition import PCA
+import gensim.downloader as api
 
 nltk.download('punkt')
 
@@ -185,21 +186,52 @@ def chunk_text(text, size=300):
 # ----------------------------
 # WORD2VEC EMBEDDINGS
 # ----------------------------
+# def embed_text_list(text_list, model, pca_model=None):
+#     vectors = []
+#     for text in text_list:
+#         tokens = [w for w in word_tokenize(text.lower()) if w in model.key_to_index]
+#         if tokens:
+#             vec = np.mean([model[w] for w in tokens], axis=0)
+#         else:
+#             vec = np.zeros(model.vector_size)
+#         vectors.append(vec)
+#     vectors = np.array(vectors, dtype=np.float32)
+    
+#     # Reduce to 256 dimensions if PCA model is provided
+#     if pca_model:
+#         vectors = pca_model.transform(vectors)
+#     return vectors
+
+ 
+
+# Load a small pre-trained embedding (100-dim)
+
+model = api.load("glove-wiki-gigaword-100")
+from nltk.tokenize import word_tokenize
+import numpy as np
+
 def embed_text_list(text_list, model, pca_model=None):
     vectors = []
     for text in text_list:
+        # Tokenize text and keep words in vocabulary
         tokens = [w for w in word_tokenize(text.lower()) if w in model.key_to_index]
+        
         if tokens:
-            vec = np.mean([model[w] for w in tokens], axis=0)
+            vec = np.mean([model[w] for w in tokens], axis=0)  # average word vectors
         else:
-            vec = np.zeros(model.vector_size)
+            vec = np.zeros(model.vector_size)  # fallback zero vector
+        
         vectors.append(vec)
+    
     vectors = np.array(vectors, dtype=np.float32)
     
-    # Reduce to 256 dimensions if PCA model is provided
+    # Reduce dimensionality if PCA model is provided
     if pca_model:
         vectors = pca_model.transform(vectors)
+    
     return vectors
+
+
 
 # ----------------------------
 # FAISS INDEX
