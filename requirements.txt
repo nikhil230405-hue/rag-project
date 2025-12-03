@@ -6,6 +6,7 @@ PyPDF2
 scikit-learn
 nltk
 faiss-cpu
+sentence-transformers
 
 streamlit
 numpy
