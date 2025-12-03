@@ -26,11 +26,11 @@ def chunk_text(text, size=300):
     return [" ".join(words[i:i+size]) for i in range(0, len(words), size)]
 
 # ----------------------------
-# GROQ EMBEDDINGS
+# GROQ EMBEDDINGS (CORRECT MODEL)
 # ----------------------------
 def embed_text_list(text_list):
     response = client.embeddings.create(
-        model="nomic-embed-text",
+        model="text-embedding-3-large",
         input=text_list
     )
     return np.array([item.embedding for item in response.data]).astype("float32")
@@ -50,14 +50,14 @@ def search_faiss(query, chunks, index, top_k=3):
     return [chunks[i] for i in idxs[0]]
 
 # ----------------------------
-# GROQ LLM FOR ANSWERING
+# GROQ LLM ANSWERING
 # ----------------------------
 def groq_answer(question, context):
     prompt = f"""
 You are a helpful FAQ assistant.
 
-Use the provided context **ONLY IF RELEVANT**.  
-If the context is not related to the question, give a general helpful answer.
+Use the retrieved context ONLY IF it is relevant.
+If context is irrelevant, answer the question generally.
 
 Context:
 {context}
@@ -77,14 +77,13 @@ Question: {question}
 # STREAMLIT UI
 # ----------------------------
 st.title("📘 University FAQ RAG Chatbot (Groq + FAISS)")
-st.write("Upload your PDF and ask any question — RAG + general LLM answers.")
+st.write("Upload your PDF and ask any question. Combines RAG + General LLM Answering.")
 
 pdf = st.file_uploader("Upload your FAQ PDF", type="pdf")
 
 if pdf:
     st.success("PDF uploaded successfully!")
 
-    # Build RAG system
     text = extract_pdf_text(pdf)
     chunks = chunk_text(text)
     chunk_embeddings = embed_text_list(chunks)
@@ -93,15 +92,15 @@ if pdf:
     question = st.text_input("Ask a question:")
 
     if question:
-        retrieved_chunks = search_faiss(question, chunks, index)
-        context = "\n\n".join(retrieved_chunks)
+        retrieved = search_faiss(question, chunks, index)
+        context = "\n\n".join(retrieved)
 
         answer = groq_answer(question, context)
 
         st.subheader("🟦 Answer")
         st.write(answer)
 
-        st.subheader("🟧 Retrieved Chunks Used")
-        for i, c in enumerate(retrieved_chunks):
+        st.subheader("🔍 Retrieved Chunks Used")
+        for i, c in enumerate(retrieved):
             with st.expander(f"Chunk {i+1}"):
                 st.write(c)
